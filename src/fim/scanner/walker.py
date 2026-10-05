@@ -23,18 +23,23 @@ class SafePathWalker:
         self.follow_symlinks = follow_symlinks
         self.max_depth = max_depth or settings.MAX_RECURSION_DEPTH
 
+    @staticmethod
+    def is_path_excluded(path: Path, patterns: list[str]) -> bool:
+        """Check if path matches any glob/exclusion pattern."""
+        path_str = str(path)
+        name = path.name
+
+        for pattern in patterns:
+            if fnmatch.fnmatch(name, pattern) or fnmatch.fnmatch(path_str, pattern):
+                return True
+        return False
+
     def is_excluded(self, path: Path) -> bool:
         """Check if path matches any configured glob/exclusion pattern.
 
         Evaluates against both file name and string path representations.
         """
-        path_str = str(path)
-        name = path.name
-
-        for pattern in self.exclude_patterns:
-            if fnmatch.fnmatch(name, pattern) or fnmatch.fnmatch(path_str, pattern):
-                return True
-        return False
+        return self.is_path_excluded(path, self.exclude_patterns)
 
     def walk(self, root: Path) -> Generator[Path, None, None]:
         """Safely traverse directory tree yielding readable regular files.

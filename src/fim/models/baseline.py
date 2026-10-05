@@ -43,8 +43,7 @@ class BaselineCatalog(BaseModel):
             "root_paths": sorted(self.root_paths),
             "total_files": self.total_files,
             "records": {
-                p: self.records[p].model_dump(mode="json")
-                for p in sorted(self.records.keys())
+                p: self.records[p].model_dump(mode="json") for p in sorted(self.records.keys())
             },
         }
         return json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
