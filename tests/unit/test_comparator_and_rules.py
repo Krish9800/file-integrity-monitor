@@ -331,3 +331,82 @@ def test_threat_policy_eval_report_sorting_and_filtering() -> None:
     high_and_above = PolicyEngine.filter_alerts(alerts, min_severity=Severity.HIGH)
     assert len(high_and_above) == 1
     assert high_and_above[0].target_path == "/etc/shadow"
+
+
+def test_threat_policy_critical_file_added_and_metadata() -> None:
+    engine = PolicyEngine(critical_patterns=["*/bin/*"])
+
+    # 1. Critical file added
+    rec_injected = FileRecord(
+        path="/usr/bin/backdoor",
+        size_bytes=100,
+        mode=0o100755,
+        permissions="755",
+        uid=0,
+        gid=0,
+        mtime=1.0,
+        inode=999,
+        is_suid=False,
+        is_sgid=False,
+    )
+    baseline = BaselineCatalog(root_paths=["/usr/bin"], records={})
+    report = StateComparator.compare(baseline, {rec_injected.path: rec_injected})
+    alert = engine.evaluate_delta(report.deltas[0])
+    assert alert.severity == Severity.CRITICAL
+    assert alert.category == "CRITICAL_FILE_INJECTION"
+
+    # 2. Critical file metadata altered
+    rec_crit_old = FileRecord(
+        path="/usr/bin/sudo",
+        size_bytes=500,
+        mode=0o104755,
+        permissions="4755",
+        uid=0,
+        gid=0,
+        mtime=1.0,
+        inode=100,
+        is_suid=True,
+        is_sgid=False,
+        hashes={"sha256": "same"},
+    )
+    rec_crit_new = rec_crit_old.model_copy(
+        update={"permissions": "0755", "mode": 0o100755, "is_suid": False}
+    )
+    base_crit = BaselineCatalog(root_paths=["/usr/bin"], records={rec_crit_old.path: rec_crit_old})
+    rep_crit = StateComparator.compare(base_crit, {rec_crit_new.path: rec_crit_new})
+    alert_meta = engine.evaluate_delta(rep_crit.deltas[0])
+    assert alert_meta.severity == Severity.HIGH
+    assert alert_meta.category == "CRITICAL_METADATA_ALTERED"
+
+
+def test_threat_policy_ownership_and_permission_changes() -> None:
+    engine = PolicyEngine()
+
+    rec_base = FileRecord(
+        path="/var/www/index.html",
+        size_bytes=50,
+        mode=0o100644,
+        permissions="644",
+        uid=1000,
+        gid=1000,
+        mtime=1.0,
+        inode=1,
+        is_suid=False,
+        is_sgid=False,
+        hashes={"sha256": "abc"},
+    )
+
+    # UID/GID change
+    rec_chown = rec_base.model_copy(update={"uid": 0})
+    base = BaselineCatalog(root_paths=["/var/www"], records={rec_base.path: rec_base})
+    rep_chown = StateComparator.compare(base, {rec_chown.path: rec_chown})
+    alert_chown = engine.evaluate_delta(rep_chown.deltas[0])
+    assert alert_chown.severity == Severity.MEDIUM
+    assert alert_chown.category == "OWNERSHIP_CHANGED"
+
+    # Non-world-writable permission change
+    rec_chmod = rec_base.model_copy(update={"permissions": "664", "mode": 0o100664})
+    rep_chmod = StateComparator.compare(base, {rec_chmod.path: rec_chmod})
+    alert_chmod = engine.evaluate_delta(rep_chmod.deltas[0])
+    assert alert_chmod.severity == Severity.MEDIUM
+    assert alert_chmod.category == "PERMISSIONS_ALTERED"

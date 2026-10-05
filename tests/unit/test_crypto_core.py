@@ -101,6 +101,16 @@ def test_hmac_key_lifecycle(tmp_path: Path) -> None:
     with pytest.raises(IntegrityError, match="at least 32 bytes"):
         save_key(b"too_short_key", tmp_path / "bad.key")
 
+    # Test load missing key
+    with pytest.raises(IntegrityError, match="does not exist"):
+        load_key(tmp_path / "missing.key")
+
+    # Test load short key
+    short_file = tmp_path / "short.key"
+    short_file.write_bytes(b"short")
+    with pytest.raises(IntegrityError, match="insufficiently secure"):
+        load_key(short_file)
+
 
 def test_hmac_sign_and_verify() -> None:
     """Verify HMAC-SHA256 signature generation and constant-time tampering detection."""

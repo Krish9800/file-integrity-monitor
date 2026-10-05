@@ -3,6 +3,7 @@
 import logging
 from pathlib import Path
 
+from fim.core.hasher import FileHashingError
 from fim.models.baseline import BaselineCatalog
 from fim.models.file_record import FileRecord
 from fim.scanner.walker import SafePathWalker
@@ -32,7 +33,7 @@ class ScanEngine:
                 try:
                     record = FileRecord.from_path(file_path, compute_hashes=True)
                     records[record.path] = record
-                except (PermissionError, OSError) as exc:
+                except (PermissionError, OSError, FileHashingError) as exc:
                     logger.warning("Could not process file '%s': %s", file_path, exc)
 
         return records

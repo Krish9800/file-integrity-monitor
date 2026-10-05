@@ -90,3 +90,23 @@ def test_walker_handles_single_file_root(tmp_path: Path) -> None:
     files = list(walker.walk(target))
     assert len(files) == 1
     assert files[0] == target.resolve()
+
+
+def test_walker_max_depth_enforcement(tmp_path: Path) -> None:
+    """Ensure walker halts when max_depth is exceeded."""
+    nested = tmp_path / "d1" / "d2" / "d3"
+    nested.mkdir(parents=True)
+    deep_file = nested / "deep.txt"
+    deep_file.write_text("deep")
+
+    # Set max_depth to 1 (only root's immediate files/subdirs allowed)
+    walker = SafePathWalker(max_depth=1)
+    files = list(walker.walk(tmp_path))
+    assert deep_file.resolve() not in files
+
+
+def test_walker_nonexistent_root() -> None:
+    """Ensure walking a non-existent root yields nothing."""
+    walker = SafePathWalker()
+    files = list(walker.walk(Path("/nonexistent/path/xyz")))
+    assert files == []
