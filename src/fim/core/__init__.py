@@ -1,5 +1,6 @@
-"""Core cryptographic and integrity primitives."""
+"""Core cryptographic, integrity, and comparison primitives."""
 
+from fim.core.comparator import StateComparator
 from fim.core.hasher import FileHashingError, hash_bytes, hash_file
 from fim.core.integrity import (
     IntegrityError,
@@ -13,6 +14,7 @@ from fim.core.integrity import (
 __all__ = [
     "FileHashingError",
     "IntegrityError",
+    "StateComparator",
     "generate_key",
     "hash_bytes",
     "hash_file",

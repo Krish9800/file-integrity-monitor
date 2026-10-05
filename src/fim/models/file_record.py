@@ -83,12 +83,18 @@ class FileRecord(BaseModel):
 
         if self.size_bytes != other.size_bytes:
             diffs["size_bytes"] = (self.size_bytes, other.size_bytes)
+        if self.mode != other.mode:
+            diffs["mode"] = (oct(self.mode), oct(other.mode))
         if self.permissions != other.permissions:
             diffs["permissions"] = (self.permissions, other.permissions)
         if self.uid != other.uid:
             diffs["uid"] = (self.uid, other.uid)
         if self.gid != other.gid:
             diffs["gid"] = (self.gid, other.gid)
+        if self.mtime != other.mtime:
+            diffs["mtime"] = (self.mtime, other.mtime)
+        if self.inode != other.inode:
+            diffs["inode"] = (self.inode, other.inode)
         if self.is_suid != other.is_suid:
             diffs["is_suid"] = (self.is_suid, other.is_suid)
         if self.is_sgid != other.is_sgid:
