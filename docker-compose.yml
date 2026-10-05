@@ -1,0 +1,31 @@
+version: "3.8"
+
+services:
+  fim-daemon:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fim-daemon
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    user: "10001:10001"
+    volumes:
+      # Mount host path in read-only mode for defensive file integrity observation
+      - /etc:/monitored/etc:ro
+      - /usr/bin:/monitored/usr_bin:ro
+      - fim-state:/data
+      - fim-logs:/var/log/fim
+    environment:
+      - FIM_LOG_LEVEL=INFO
+      - FIM_HASH_CHUNK_SIZE_BYTES=65536
+    command: ["watch", "/monitored/etc", "--format", "json", "--log-file", "/var/log/fim/alerts.jsonl"]
+
+volumes:
+  fim-state:
+    driver: local
+  fim-logs:
+    driver: local
