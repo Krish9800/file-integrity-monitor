@@ -1,204 +1,170 @@
-# File Integrity Monitoring (FIM) Engine
+# File Integrity Monitoring (FIM) Engine (`fim`)
 
-[![CI](https://github.com/Krish9800/file-integrity-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/Krish9800/file-integrity-monitor/actions)
-[![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
-[![Security: Bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
-[![Type Checked: mypy](https://img.shields.io/badge/type_checker-mypy_strict-blue.svg)](https://mypy-lang.org/)
-[![Code Style: Ruff](https://img.shields.io/badge/code_style-ruff-black.svg)](https://astral.sh/ruff)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+Production-Inspired Cryptographic File Integrity Monitoring (FIM) Engine with HMAC-SHA256 Baseline Sealing, Real-Time Inotify Watching, and Tamper Detection.
 
-> **Educational Defensive Security Project (Cybersecurity Portfolio — Project 03)**  
-> A production-grade, host-based File Integrity Monitoring (FIM) and anti-tampering engine built in Python 3.12+. Features dual-algorithm streaming cryptographic hashing (SHA-256 + BLAKE2b), HMAC-authenticated baseline catalogs against poisoning attacks, complete POSIX metadata inspection, real-time filesystem event monitoring via kernel inotify, and SIEM-ready security alert telemetry (JSON Lines and ArcSight CEF).
+[![CI Pipeline](https://github.com/Krish9800/file-integrity-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/Krish9800/file-integrity-monitor/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python: 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
+[![CLI: Typer](https://img.shields.io/badge/CLI-Typer-green.svg)](https://typer.tiangolo.com/)
+[![Standards: PCI DSS 11.5](https://img.shields.io/badge/Standards-PCI%20DSS%2011.5-blueviolet.svg)](https://www.pcisecuritystandards.org/)
 
 ---
 
-## 🔒 Security Posture & Architecture Guarantees
+## Overview & Problem Statement
 
-> [!IMPORTANT]
-> **Core Cryptographic & Defensive Controls:**
-> - **Dual Cryptographic Hashing:** Every file is digested concurrently with both SHA-256 and BLAKE2b via $O(1)$ memory-bounded streaming chunks ($64\text{ KB}$ buffers), eliminating collision vulnerabilities.
-> - **Baseline Sealing via HMAC-SHA256:** Baseline catalogs are cryptographically signed with a 256-bit secret key. If an adversary attempts to modify the baseline database, verification fails in constant time with exit code 2.
-> - **Full POSIX Metadata Inspection:** Tracks permission bitmasks (`chmod`), ownership transfers (`chown`), file sizes, modification timestamps (`mtime`), and inodes.
-> - **Symlink & Traversal Hardening:** Canonical path resolution and refusal to follow symbolic links (`follow_symlinks=False`) prevent directory escape attacks and cyclic recursion bombs.
-> - **Real-Time Kernel Auditing:** Continuous filesystem event watching using OS kernel notifications (`watchdog` / Linux inotify) with intelligent debouncing.
-> - **Threat Policy Rules:** Instant `CRITICAL` alert dispatch on SetUID (`0o4000`) or SetGID (`0o2000`) elevation, critical system file tampering (`/etc/shadow`, `/etc/sudoers`, `/bin/*`), and world-writable permission exposure (`0o002`).
+Adversaries routinely establish persistence, inject backdoors, or modify system binaries (e.g., `/bin/login`, `/etc/pam.d/`, `/etc/shadow`) following unauthorized access. Regulatory compliance frameworks (such as PCI DSS 11.5 and NIST SP 800-53) mandate automated File Integrity Monitoring to alert administrators immediately upon unauthorized file modifications.
+
+**File Integrity Monitor (FIM)** is a robust, lightweight host security agent. It builds tamper-evident cryptographic baselines using SHA-256 and HMAC authentication, tracks file metadata (permissions, UID/GID, size, mtime), conducts scheduled verification audits, and monitors critical directory paths in real time via filesystem event hooks.
 
 ---
 
-## 📋 Compliance & Regulatory Mapping
+## Architecture & Data Flow
 
-This engine directly satisfies technical requirements across industry compliance frameworks:
+```mermaid
+flowchart TD
+    subgraph Baseline Initialization
+        MasterKey[Master Secret Key] --> HMACSigner[HMAC-SHA256 Signer]
+        TargetFiles[Monitored Directory / System Files] --> Hasher[SHA-256 Content Hasher]
+        TargetFiles --> StatParser[Inode Metadata Extractor: Mode / UID / Mtime]
+        Hasher --> BaselineDB[(Baseline Manifest DB: Encrypted / Sealed)]
+        StatParser --> BaselineDB
+        HMACSigner --> BaselineDB
+    end
 
-| Standard / Framework | Requirement | How FIM Satisfies It |
-| :--- | :--- | :--- |
-| **PCI DSS v4.0** | **Requirement 11.5.2** | Deploys a file integrity monitoring mechanism to alert personnel to unauthorized modification of critical system files, configuration files, or content files. |
-| **NIST SP 800-53 Rev. 5** | **SI-7: Software, Firmware, and Information Integrity** | Employs integrity verification tools to detect unauthorized changes to software, firmware, and information across protected host boundaries. |
-| **ISO/IEC 27001:2022** | **Control A.12.4.1 (Event Logging)** | Monitors and logs unauthorized administrative actions and file modifications for forensic auditability. |
-| **SOC 2 Type II** | **Common Criteria CC6.8** | Prevents or detects unauthorized execution of malicious software, alterations to binaries, and access privilege deviations. |
+    subgraph Verification & Detection
+        BaselineDB --> Verifier[Scheduled / On-Demand Verifier]
+        TargetFiles --> Verifier
+
+        Verifier --> ModCheck{Change Detected?}
+        ModCheck -->|Content Changed| AlertContent[ALERT: Hash Mismatch / File Modified]
+        ModCheck -->|Perms Changed| AlertPerms[ALERT: Inode Permission / Ownership Drift]
+        ModCheck -->|New File| AlertNew[ALERT: Unauthorized File Created]
+        ModCheck -->|Deleted File| AlertDel[ALERT: Monitored File Deleted]
+    end
+
+    subgraph Real-Time Engine
+        TargetFiles --> Inotify[Inotify / Watchdog Event Loop]
+        Inotify --> RealtimeAlert[Immediate Real-Time Event Dispatch]
+    end
+```
 
 ---
 
-## 🚀 Quick Start
+## Verified Features
 
-### 1. Installation
+- **Cryptographic Baseline Sealing:** Hashes files using SHA-256 and seals baseline manifests with HMAC-SHA256 to prevent attackers from tampering with the baseline database.
+- **Full Inode Metadata Tracking:** Monitors file permissions (POSIX mode octals), owner UID, group GID, byte size, and last modified timestamp (`mtime`).
+- **Deep Directory Recursion & Rule Filtering:** Supports regex and glob exclusion patterns (e.g. ignoring temporary logs, `.git`, or cache directories).
+- **Real-Time Watch Mode:** Asynchronous real-time filesystem monitoring reporting creation, modification, and deletion events with millisecond precision.
+- **Detailed Forensic Diff Reporting:** Generates structured terminal tables and JSON alerts detailing the exact nature of detected file drifts.
 
-Requires **Python 3.12+**.
+---
+
+## Technology Stack
+
+- **Runtime:** Python 3.12+
+- **Cryptography:** Standard library `hashlib` & `hmac`
+- **Filesystem Events:** `watchdog` & `pathlib`
+- **CLI Framework:** Typer & Rich
+- **Quality Gates:** Pytest, Ruff, Mypy Strict, Bandit
+
+---
+
+## Requirements & Installation
 
 ```bash
 # Clone the repository
 git clone https://github.com/Krish9800/file-integrity-monitor.git
 cd file-integrity-monitor
 
-# Create virtual environment
+# Create and activate virtual environment
 python3 -m venv .venv
 source .venv/bin/activate
 
-# Install in editable mode with development dependencies
-pip install -e .[dev]
+# Install dependencies
+pip install -e .
 ```
 
-### 2. Generate a 256-Bit HMAC Authentication Key
+---
 
-Create a cryptographically secure key to sign and verify baseline catalogs:
+## Verified Usage Examples
+
+### 1. Initialize Authentication Key
 
 ```bash
+# Generate a cryptographic master key to seal baseline databases
 fim init-key --output fim.key
 ```
-*Note: Key permissions are automatically restricted to POSIX `0600` (owner read/write only).*
 
-### 3. Create a Sealed Cryptographic Baseline
-
-Scan target directories (e.g. `/etc`, `/bin`, `/var/www`), compute streaming hashes, and seal with HMAC-SHA256:
+### 2. Create Baseline Manifest
 
 ```bash
-fim baseline create /etc /bin \
-    --output baseline.json \
-    --key fim.key \
-    --exclude "*.tmp" \
-    --exclude "*.log"
+# Generate a signed baseline of a critical directory
+fim baseline-create --directory /etc/nginx --key fim.key --output nginx_baseline.db
 ```
 
-### 4. Verify Filesystem State Against Baseline
-
-Audit live files against the sealed catalog:
+### 3. Verify System Against Baseline
 
 ```bash
-# Human-readable Rich console report and alerts table
-fim verify --baseline baseline.json --key fim.key
-
-# Stream JSON Lines for data pipelines
-fim verify --baseline baseline.json --key fim.key --format json
-
-# Stream ArcSight Common Event Format (CEF) for SIEM
-fim verify --baseline baseline.json --key fim.key --format cef
+# Perform an audit comparing disk state against the sealed baseline
+fim verify --baseline nginx_baseline.db --key fim.key
 ```
 
-### 5. Launch Real-Time Kernel Event Monitoring Daemon
+Sample Detection Output:
+```
+[!] INTEGRITY VIOLATION DETECTED
+  Path: /etc/nginx/nginx.conf
+  Status: MODIFIED
+  Expected SHA-256: 4a2b9f...
+  Observed SHA-256: 9e8a1c...
+  Expected Permissions: 0644 (rw-r--r--)
+  Observed Permissions: 0777 (rwxrwxrwx)
+```
 
-Watch directories continuously for unauthorized changes and stream security alerts in real time:
+### 4. Real-Time Watch Mode
 
 ```bash
-fim watch /etc /bin \
-    --baseline baseline.json \
-    --key fim.key \
-    --format console \
-    --log-file /var/log/fim/alerts.jsonl
+# Actively watch a directory for instant modification events
+fim watch --directory /var/www/html --key fim.key
 ```
 
 ---
 
-## 🛠️ CLI Reference
-
-```
-Usage: fim [OPTIONS] COMMAND [ARGS]...
-
-Production-Grade File Integrity Monitoring (FIM) & Anti-Tampering Engine.
-
-Commands:
-  init-key   Generate a cryptographically secure 256-bit HMAC key with POSIX 0600 permissions.
-  baseline   Manage cryptographic filesystem baseline catalogs (create).
-  verify     Verify live filesystem state against cryptographic baseline catalog.
-  watch      Continuously monitor filesystem in real-time and stream security alerts.
-  version    Print FIM version and cryptographic capabilities.
-```
-
-### Exit Codes for CI/CD & Automation
-- `0`: Success / Intact. No unauthorized modifications detected.
-- `1`: Security Alert / Modifications detected. Changes found between baseline and live state.
-- `2`: Integrity Failure. Baseline HMAC signature mismatch or corrupted baseline catalog.
-
----
-
-## 📡 SIEM & SOC Integration
-
-### ArcSight Common Event Format (CEF)
-Alerts can be emitted directly as standard CEF strings for syslog / SIEM ingestion:
-
-```
-CEF:0|CyberSecurityPortfolio|FileIntegrityMonitor|0.1.0|SUID_PRIVILEGE_ESCALATION|Privilege escalation indicator: SUID/SGID bit active on /usr/bin/tool|10|filePath=/usr/bin/tool act=MODIFIED msg=Privilege escalation indicator: SUID/SGID bit active on /usr/bin/tool externalId=18a8b1d9-5f21-4fce-bdfa-b1cfcbdf33a6 rt=2026-10-05T15:30:00.000000+00:00
-```
-
-### Structured JSON Lines
-```json
-{
-  "id": "18a8b1d9-5f21-4fce-bdfa-b1cfcbdf33a6",
-  "timestamp": "2026-10-05T15:30:00.000000+00:00",
-  "severity": "CRITICAL",
-  "category": "CRITICAL_FILE_TAMPERED",
-  "target_path": "/etc/shadow",
-  "change_type": "MODIFIED",
-  "description": "Cryptographic hash mismatch on critical system file: /etc/shadow",
-  "recommendation": "Immediate incident response required. Inspect binary diffs or configuration backdoors.",
-  "details": {
-    "hash_sha256": ["old_hash...", "new_hash..."]
-  }
-}
-```
-
----
-
-## 🐳 Docker Deployment
-
-Run as an isolated, unprivileged container with read-only host mounts:
+## Testing & Quality Gates
 
 ```bash
-# Build the non-root container
-docker build -t fim:latest .
+# Run unit, integration, and security tests
+pytest --cov=fim --cov-report=term-missing
 
-# Run daemon with docker-compose
-docker compose up -d
-```
+# Test HMAC signature verification specifically
+pytest tests/unit/test_baseline.py
 
----
-
-## 🧪 Testing & DevSecOps Quality Gates
-
-The test suite enforces a **90%+ statement coverage gate** across unit, integration, and security edge case suites:
-
-```bash
-# Run full test suite with coverage report
-pytest --cov=src --cov-report=term-missing --cov-fail-under=90
-
-# Run Ruff linter and formatter checks
+# Code formatting and linting
 ruff check .
 ruff format --check .
-
-# Run Mypy strict type checking
-mypy src/
-
-# Run Bandit AST security scan
-bandit -r src/
+mypy src/fim
 ```
 
 ---
 
-## 📚 Documentation
-- [System Architecture & Cryptographic Design](docs/architecture.md)
-- [STRIDE Threat Model & Mitigations](docs/threat_model.md)
-- [Release Changelog](CHANGELOG.md)
-- [Security Policy](SECURITY.md)
+## Security Model & Threat Boundaries
+
+- **Tamper-Evident Baselines:** The baseline manifest is protected with HMAC-SHA256. If an adversary attempts to modify the baseline database on disk to hide a backdoor, verification fails immediately with a signature validation error.
+- **Key Separation:** The cryptographic key (`fim.key`) should be stored on a read-only volume, secure vault, or external flash drive during live operations.
+- **Memory-Safe Hashing:** Files are read in 64KB chunks to process multi-gigabyte ISOs and binaries without high memory overhead.
 
 ---
 
-## 📄 License
-This project is licensed under the [MIT License](LICENSE).
+## Limitations & Known Issues
+
+- **In-Memory Volatility:** In-memory file descriptors or deleted files that remain held open in Linux memory are detected as deleted from the filesystem, but memory inspection requires a memory forensics tool (e.g. Volatility).
+- **Symlink Traversal:** By default, symbolic links are evaluated without following external targets to prevent directory traversal loops.
+
+---
+
+## License & Responsible Use
+
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+
+> [!NOTE]
+> Designed for system administrators, DevSecOps engineers, and compliance security audits.
